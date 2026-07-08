@@ -1,15 +1,28 @@
-const STORAGE_KEY = "store-contact-system-v4";
+const STORAGE_KEY = "store-contact-system-v5";
 
 const areas = [
-  "北海道・東北", "東京", "関東", "東海", "名古屋", "関西",
-  "大阪 ミナミ", "大阪 キタ", "京都", "神戸", "中国・四国", "広島", "九州・沖縄", "その他",
+  "北海道・東北",
+  "東京",
+  "関東",
+  "東海",
+  "名古屋 栄・錦",
+  "関西",
+  "大阪 ミナミ",
+  "大阪 キタ",
+  "京都 祇園",
+  "神戸",
+  "中国・四国",
+  "広島／流川・福山",
+  "九州・沖縄",
+  "その他",
 ];
 
 const assignees = ["濱治", "羽賀", "佐藤", "鈴木", "安田"];
 const statusOrder = ["未連絡", "連絡済", "返信待ち", "撮影決定", "完了"];
 const progressMap = { "未連絡": 12, "連絡済": 35, "返信待ち": 55, "撮影決定": 78, "完了": 100 };
 
-const osakaMinamiNames = `
+const storeGroups = {
+  "大阪 ミナミ": `
 A-TOP -MONSTAR-
 Ai
 IR
@@ -141,13 +154,87 @@ Retty
 LOX
 WORLD 大阪本店
 WORLD 大阪本店 2部
-`;
+`,
+  "大阪 キタ": `
+ATOM-UMEDA-
+ATOM -UMEDA ANNEX-
+ATOM-PRINCE-
+AHEAD
+ELDORADO -umeda-
+P'CE UMEDA
+`,
+  "京都 祇園": `
+I'll Antique
+ACQUA -Amber-
+RAD Air Drop 1st
+RAD ONLY
+RAD SPICE
+RAD REGALIS
+OMEGA by ACQUA
+GATE- spice-
+BAR NULLA
+MODE
+One Chance
+`,
+  "神戸": `
+Atena
+ARROW
+Anser
+EVOL
+Ace
+Grandia
+GATE
+Spica
+Deep
+TRUE
+Dream
+FATE
+Felicia
+Prince&Princess
+Rise
+link
+`,
+  "名古屋 栄・錦": `
+ACQUA NAGOYA
+ABYSS
+A+1
+ALZA
+WELT
+EIGHT
+KIRAMEKI
+KIRINZHI
+King On Bunny 名古屋店
+KINZISHI
+GOLD NAGOYA
+Chocolat -NAGOYA-
+DEAR'S NEO
+NEXT LEVEL
+MIKADO
+LEON
+Royal Collection
+`,
+  "広島／流川・福山": `
+ICE
+ACQUA -Hiroshima-
+Avid
+AIM by ACQUA
+CROWN GROUP
+b/n
+FABULOUS
+BLACK-EVE-
+BLACK LIST
+U men's club
+`,
+};
 
-// STAR GUYS掲載店舗マスター。サンプル店舗は削除済み。
-const storeMaster = osakaMinamiNames
-  .trim()
-  .split("\n")
-  .map((name) => ({ name: name.trim(), area: "大阪 ミナミ" }));
+const storeMaster = Object.entries(storeGroups).flatMap(([area, names]) =>
+  names
+    .trim()
+    .split("\n")
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .map((name) => ({ name, area }))
+);
 
 const seedStores = storeMaster.map((store, index) => ({
   id: crypto.randomUUID(),
