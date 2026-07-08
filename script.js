@@ -1,56 +1,64 @@
-const STORAGE_KEY = "store-contact-system-v1";
+const STORAGE_KEY = "store-contact-system-v2";
 
-const progressMap = {
-  "未連絡": 12,
-  "連絡済": 35,
-  "返信待ち": 55,
-  "撮影決定": 78,
-  "完了": 100,
-};
-
-const statusOrder = ["未連絡", "連絡済", "返信待ち", "撮影決定", "完了"];
-
-const initialStores = [
-  {
-    id: crypto.randomUUID(),
-    name: "SAMPLE OSAKA",
-    area: "大阪 ミナミ",
-    assignee: "安田",
-    status: "未連絡",
-    targetDate: "",
-  },
-  {
-    id: crypto.randomUUID(),
-    name: "SAMPLE KYOTO",
-    area: "京都",
-    assignee: "濱治",
-    status: "連絡済",
-    targetDate: "",
-  },
-  {
-    id: crypto.randomUUID(),
-    name: "SAMPLE HIROSHIMA",
-    area: "広島",
-    assignee: "佐藤",
-    status: "返信待ち",
-    targetDate: "",
-  },
+const areas = [
+  "北海道・東北",
+  "東京",
+  "関東",
+  "東海",
+  "名古屋",
+  "関西",
+  "大阪 ミナミ",
+  "大阪 キタ",
+  "京都",
+  "神戸",
+  "中国・四国",
+  "広島",
+  "九州・沖縄",
+  "その他",
 ];
+
+const assignees = ["濱治", "羽賀", "佐藤", "鈴木", "安田"];
+const statusOrder = ["未連絡", "連絡済", "返信待ち", "撮影決定", "完了"];
+const progressMap = { "未連絡": 12, "連絡済": 35, "返信待ち": 55, "撮影決定": 78, "完了": 100 };
+
+const seedStores = [
+  ["SAMPLE OSAKA MINAMI", "大阪 ミナミ", "安田"],
+  ["SAMPLE OSAKA KITA", "大阪 キタ", "羽賀"],
+  ["SAMPLE KYOTO", "京都", "濱治"],
+  ["SAMPLE KOBE", "神戸", "鈴木"],
+  ["SAMPLE NAGOYA", "名古屋", "佐藤"],
+  ["SAMPLE HIROSHIMA", "広島", "佐藤"],
+  ["SAMPLE TOKYO", "東京", "濱治"],
+  ["SAMPLE FUKUOKA", "九州・沖縄", "安田"],
+].map(([name, area, assignee]) => ({
+  id: crypto.randomUUID(),
+  name,
+  area,
+  assignee,
+  status: "未連絡",
+  targetDate: "",
+  memo: "",
+}));
 
 let stores = loadStores();
 
 const form = document.getElementById("storeForm");
-const tableBody = document.getElementById("storeTable");
+const areaList = document.getElementById("areaList");
 const ganttChart = document.getElementById("ganttChart");
 const totalStores = document.getElementById("totalStores");
+const visibleStores = document.getElementById("visibleStores");
 const visibleCount = document.getElementById("visibleCount");
+const summaryCards = document.getElementById("summaryCards");
+const searchText = document.getElementById("searchText");
+const filterArea = document.getElementById("filterArea");
 const filterAssignee = document.getElementById("filterAssignee");
 const filterStatus = document.getElementById("filterStatus");
 const resetData = document.getElementById("resetData");
 
+initSelects();
+
 form.addEventListener("submit", (event) => {
   event.preventDefault();
-
   const store = {
     id: crypto.randomUUID(),
     name: document.getElementById("storeName").value.trim(),
@@ -58,36 +66,46 @@ form.addEventListener("submit", (event) => {
     assignee: document.getElementById("assignee").value,
     status: document.getElementById("status").value,
     targetDate: document.getElementById("targetDate").value,
+    memo: "",
   };
-
   if (!store.name) return;
-
   stores.unshift(store);
   saveStores();
   form.reset();
   render();
 });
 
-filterAssignee.addEventListener("change", render);
-filterStatus.addEventListener("change", render);
+[searchText, filterArea, filterAssignee, filterStatus].forEach((element) => element.addEventListener("input", render));
 
 resetData.addEventListener("click", () => {
-  const ok = confirm("登録データを初期状態に戻しますか？");
-  if (!ok) return;
-  stores = [...initialStores];
+  if (!confirm("登録データを初期状態に戻しますか？")) return;
+  stores = [...seedStores];
   saveStores();
   render();
 });
 
+function initSelects() {
+  fillSelect(document.getElementById("storeArea"), areas);
+  fillSelect(document.getElementById("assignee"), assignees);
+  fillSelect(document.getElementById("status"), statusOrder);
+  fillSelect(filterArea, areas, true, "全エリア");
+  fillSelect(filterAssignee, assignees, true, "全員");
+  fillSelect(filterStatus, statusOrder, true, "すべて");
+}
+
+function fillSelect(select, values, hasAll = false, allLabel = "すべて") {
+  const currentFirst = hasAll ? `<option value="all">${allLabel}</option>` : "";
+  select.innerHTML = currentFirst + values.map((value) => `<option>${value}</option>`).join("");
+}
+
 function loadStores() {
   const saved = localStorage.getItem(STORAGE_KEY);
-  if (!saved) return [...initialStores];
-
+  if (!saved) return [...seedStores];
   try {
     const parsed = JSON.parse(saved);
-    return Array.isArray(parsed) ? parsed : [...initialStores];
-  } catch (error) {
-    return [...initialStores];
+    return Array.isArray(parsed) ? parsed : [...seedStores];
+  } catch {
+    return [...seedStores];
   }
 }
 
@@ -96,133 +114,149 @@ function saveStores() {
 }
 
 function getFilteredStores() {
+  const keyword = searchText.value.trim().toLowerCase();
   return stores.filter((store) => {
+    const keywordMatch = !keyword || store.name.toLowerCase().includes(keyword);
+    const areaMatch = filterArea.value === "all" || store.area === filterArea.value;
     const assigneeMatch = filterAssignee.value === "all" || store.assignee === filterAssignee.value;
     const statusMatch = filterStatus.value === "all" || store.status === filterStatus.value;
-    return assigneeMatch && statusMatch;
+    return keywordMatch && areaMatch && assigneeMatch && statusMatch;
   });
 }
 
 function render() {
   const filteredStores = getFilteredStores();
-
   totalStores.textContent = stores.length;
+  visibleStores.textContent = filteredStores.length;
   visibleCount.textContent = `${filteredStores.length}件表示中`;
-
-  renderTable(filteredStores);
+  renderSummary();
+  renderAreaList(filteredStores);
   renderGantt(filteredStores);
 }
 
-function renderTable(items) {
-  tableBody.innerHTML = "";
+function renderSummary() {
+  summaryCards.innerHTML = statusOrder.map((status) => {
+    const count = stores.filter((store) => store.status === status).length;
+    return `<div class="summary-card"><span>${status}</span><strong>${count}</strong></div>`;
+  }).join("");
+}
 
+function renderAreaList(items) {
+  areaList.innerHTML = "";
   if (items.length === 0) {
-    tableBody.innerHTML = `<tr><td colspan="6" class="empty">該当する店舗がありません。</td></tr>`;
+    areaList.innerHTML = `<p class="empty">該当する店舗がありません。</p>`;
     return;
   }
 
-  items.forEach((store) => {
-    const row = document.createElement("tr");
-    row.innerHTML = `
-      <td><strong>${escapeHtml(store.name)}</strong></td>
-      <td>${escapeHtml(store.area)}</td>
-      <td>${escapeHtml(store.assignee)}</td>
-      <td>${statusSelect(store)}</td>
-      <td>${dateInput(store)}</td>
-      <td>
-        <div class="row-actions">
-          <button type="button" data-action="next" data-id="${store.id}">次へ</button>
-          <button type="button" class="danger" data-action="delete" data-id="${store.id}">削除</button>
-        </div>
-      </td>
+  areas.forEach((area) => {
+    const areaStores = items.filter((store) => store.area === area);
+    if (areaStores.length === 0) return;
+
+    const group = document.createElement("div");
+    group.className = "area-group";
+    group.innerHTML = `
+      <button class="area-header" type="button">
+        <span class="area-title">▶ ${escapeHtml(area)}</span>
+        <span class="area-count">${areaStores.length}件</span>
+      </button>
+      <div class="area-body">
+        ${areaStores.map(storeCard).join("")}
+      </div>
     `;
-    tableBody.appendChild(row);
+    areaList.appendChild(group);
   });
 
-  tableBody.querySelectorAll("select[data-action='status']").forEach((select) => {
-    select.addEventListener("change", (event) => {
-      const store = stores.find((item) => item.id === event.target.dataset.id);
-      if (!store) return;
-      store.status = event.target.value;
-      saveStores();
-      render();
+  areaList.querySelectorAll(".area-header").forEach((button) => {
+    button.addEventListener("click", () => {
+      const body = button.nextElementSibling;
+      const closed = body.style.display === "none";
+      body.style.display = closed ? "grid" : "none";
+      button.querySelector(".area-title").textContent = `${closed ? "▶" : "▼"} ${button.querySelector(".area-title").textContent.slice(2)}`;
     });
   });
 
-  tableBody.querySelectorAll("input[data-action='date']").forEach((input) => {
-    input.addEventListener("change", (event) => {
-      const store = stores.find((item) => item.id === event.target.dataset.id);
-      if (!store) return;
-      store.targetDate = event.target.value;
-      saveStores();
-      render();
-    });
+  areaList.querySelectorAll("select[data-action]").forEach((select) => {
+    select.addEventListener("change", (event) => updateStore(event.target.dataset.id, event.target.dataset.action, event.target.value));
   });
 
-  tableBody.querySelectorAll("button[data-action]").forEach((button) => {
+  areaList.querySelectorAll("input[data-action]").forEach((input) => {
+    input.addEventListener("change", (event) => updateStore(event.target.dataset.id, event.target.dataset.action, event.target.value));
+  });
+
+  areaList.querySelectorAll("button[data-action]").forEach((button) => {
     button.addEventListener("click", () => handleRowAction(button.dataset.action, button.dataset.id));
   });
 }
 
+function storeCard(store) {
+  return `
+    <div class="store-card">
+      <div class="store-main">
+        <strong>${escapeHtml(store.name)}</strong>
+        <small>${escapeHtml(store.area)}</small>
+      </div>
+      ${selectHtml("assignee", store.id, assignees, store.assignee)}
+      ${selectHtml("status", store.id, statusOrder, store.status, `badge status-${store.status}`)}
+      <input type="date" value="${store.targetDate || ""}" data-action="targetDate" data-id="${store.id}" />
+      <div class="row-actions">
+        <button type="button" data-action="next" data-id="${store.id}">次へ</button>
+        <button type="button" class="danger" data-action="delete" data-id="${store.id}">削除</button>
+      </div>
+    </div>
+  `;
+}
+
+function selectHtml(action, id, options, selected, className = "") {
+  return `
+    <select class="${className}" data-action="${action}" data-id="${id}">
+      ${options.map((option) => `<option ${selected === option ? "selected" : ""}>${option}</option>`).join("")}
+    </select>
+  `;
+}
+
+function updateStore(id, key, value) {
+  const store = stores.find((item) => item.id === id);
+  if (!store) return;
+  store[key] = value;
+  saveStores();
+  render();
+}
+
+function handleRowAction(action, id) {
+  const store = stores.find((item) => item.id === id);
+  if (!store) return;
+  if (action === "delete") {
+    if (!confirm(`${store.name} を削除しますか？`)) return;
+    stores = stores.filter((item) => item.id !== id);
+  }
+  if (action === "next") {
+    const currentIndex = statusOrder.indexOf(store.status);
+    store.status = statusOrder[Math.min(currentIndex + 1, statusOrder.length - 1)];
+  }
+  saveStores();
+  render();
+}
+
 function renderGantt(items) {
   ganttChart.innerHTML = "";
-
   if (items.length === 0) {
     ganttChart.innerHTML = `<p class="empty">表示できるガントチャートがありません。</p>`;
     return;
   }
 
-  items.forEach((store) => {
+  items.slice(0, 40).forEach((store) => {
     const progress = progressMap[store.status] || 0;
     const item = document.createElement("div");
     item.className = "gantt-item";
     item.innerHTML = `
       <div class="gantt-top">
         <strong>${escapeHtml(store.name)}</strong>
-        <span class="gantt-meta">${escapeHtml(store.assignee)} / ${escapeHtml(store.status)} ${store.targetDate ? `/ ${store.targetDate}` : ""}</span>
+        <span class="gantt-meta">${escapeHtml(store.area)} / ${escapeHtml(store.assignee)} / ${escapeHtml(store.status)}</span>
       </div>
-      <div class="gantt-track" aria-label="${progress}%">
-        <div class="gantt-bar" style="width:${progress}%"></div>
-      </div>
+      <div class="gantt-track"><div class="gantt-bar" style="width:${progress}%"></div></div>
     `;
     ganttChart.appendChild(item);
   });
-}
-
-function statusSelect(store) {
-  const options = statusOrder
-    .map((status) => `<option ${store.status === status ? "selected" : ""}>${status}</option>`)
-    .join("");
-
-  return `
-    <select class="badge status-${store.status}" data-action="status" data-id="${store.id}">
-      ${options}
-    </select>
-  `;
-}
-
-function dateInput(store) {
-  return `<input type="date" value="${store.targetDate || ""}" data-action="date" data-id="${store.id}" />`;
-}
-
-function handleRowAction(action, id) {
-  const store = stores.find((item) => item.id === id);
-  if (!store) return;
-
-  if (action === "delete") {
-    const ok = confirm(`${store.name} を削除しますか？`);
-    if (!ok) return;
-    stores = stores.filter((item) => item.id !== id);
-  }
-
-  if (action === "next") {
-    const currentIndex = statusOrder.indexOf(store.status);
-    const nextIndex = Math.min(currentIndex + 1, statusOrder.length - 1);
-    store.status = statusOrder[nextIndex];
-  }
-
-  saveStores();
-  render();
 }
 
 function escapeHtml(value) {
