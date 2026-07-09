@@ -8,7 +8,7 @@ const SHEETS = {
 };
 
 const STORE_HEADERS = ['店舗ID', '店舗名', 'エリア', '契約状況', '店舗URL', 'Instagram', '作成日時', '更新日時'];
-const SALES_HEADERS = ['店舗ID', '担当者', 'ステータス', '最終連絡日', '次回連絡日', 'メモ', '更新日時'];
+const SALES_HEADERS = ['店舗ID', '担当者', 'ステータス', '撮影ステータス', '最終連絡日', '次回連絡日', 'メモ', '更新日時'];
 const SETTINGS_HEADERS = ['種別', '値', '並び順'];
 const LOG_HEADERS = ['日時', '操作', '店舗ID', '内容'];
 
@@ -88,22 +88,28 @@ function ensureSheet(ss, name, headers) {
   let sheet = ss.getSheetByName(name);
   if (!sheet) sheet = ss.insertSheet(name);
 
-  const range = sheet.getRange(1, 1, 1, headers.length);
-  const current = range.getValues()[0];
-  const isEmpty = current.every((value) => value === '');
+  const currentLastColumn = Math.max(sheet.getLastColumn(), 1);
+  const currentHeaders = sheet.getRange(1, 1, 1, currentLastColumn).getValues()[0].filter(Boolean);
 
-  if (isEmpty) {
-    range.setValues([headers]);
+  if (currentHeaders.length === 0) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     sheet.setFrozenRows(1);
+    return sheet;
   }
 
+  headers.forEach((header) => {
+    if (!currentHeaders.includes(header)) {
+      sheet.getRange(1, sheet.getLastColumn() + 1).setValue(header);
+    }
+  });
+
+  sheet.setFrozenRows(1);
   return sheet;
 }
 
 function seedSettings() {
   const sheet = getSpreadsheet().getSheetByName(SHEETS.settings);
-  if (sheet.getLastRow() > 1) return;
-
+  const existing = sheetToObjects(SHEETS.settings).map((row) => row['種別'] + '::' + row['値']);
   const rows = [
     ['担当者', '濱治', 1],
     ['担当者', '羽賀', 2],
@@ -113,10 +119,15 @@ function seedSettings() {
     ['ステータス', '未連絡', 1],
     ['ステータス', '連絡済', 2],
     ['ステータス', '返信待ち', 3],
-    ['ステータス', '撮影決定', 4],
-    ['ステータス', '完了', 5],
-  ];
-  sheet.getRange(2, 1, rows.length, SETTINGS_HEADERS.length).setValues(rows);
+    ['撮影ステータス', '未設定', 1],
+    ['撮影ステータス', '撮影日確定', 2],
+    ['撮影ステータス', '撮影済', 3],
+    ['撮影ステータス', '完了', 4],
+  ].filter((row) => !existing.includes(row[0] + '::' + row[1]));
+
+  if (rows.length > 0) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, SETTINGS_HEADERS.length).setValues(rows);
+  }
 }
 
 function readAll() {
