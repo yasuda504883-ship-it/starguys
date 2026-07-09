@@ -1,4 +1,4 @@
-const STORAGE_KEY = "store-contact-system-v11";
+const STORAGE_KEY = "store-contact-system-v12";
 const API_URL = window.APP_CONFIG?.API_URL || "";
 
 const storeGroups = window.STORE_GROUPS || {};
@@ -12,19 +12,6 @@ const progressMap = { "未連絡": 12, "連絡済": 45, "返信待ち": 65 };
 const storeMaster = Object.entries(storeGroups).flatMap(([area, names]) =>
   names.trim().split("\n").map((name) => name.trim()).filter(Boolean).map((name) => ({ name, area }))
 );
-
-const seedStores = storeMaster.map((store, index) => ({
-  id: makeStoreId(store.area, store.name),
-  name: store.name,
-  area: store.area,
-  assignee: assignees[index % assignees.length],
-  status: "未連絡",
-  shootingStatus: "未設定",
-  caseType: "その他",
-  targetDate: "",
-  lastContactDate: "",
-  memo: "",
-}));
 
 let stores = loadStores();
 
@@ -51,7 +38,7 @@ initTabs();
 initSelects();
 updateStoreSuggestions();
 render();
-setSyncStatus(API_URL ? "同期URL設定済み。スプシ読込または初期反映できます。" : "API URLが未設定です。config.jsを確認してください。");
+setSyncStatus(API_URL ? "稼働準備OK。必要な案件だけ追加して運用できます。" : "API URLが未設定です。config.jsを確認してください。");
 
 loadSheetButton.addEventListener("click", loadFromSheet);
 seedSheetButton.addEventListener("click", seedSheetFromCurrentStores);
@@ -100,9 +87,10 @@ form.addEventListener("submit", (event) => {
 [searchText, filterArea, filterAssignee, filterStatus].forEach((element) => element.addEventListener("input", render));
 
 resetData.addEventListener("click", () => {
-  if (!confirm("登録データを初期状態に戻しますか？")) return;
-  stores = [...seedStores];
+  if (!confirm("現在登録されている案件をすべて削除しますか？店舗候補マスターは残ります。")) return;
+  stores = [];
   saveStores();
+  clearSheetCases();
   render();
 });
 
@@ -146,10 +134,10 @@ function fillSelect(select, values, hasAll = false, allLabel = "すべて") {
 
 function loadStores() {
   const saved = localStorage.getItem(STORAGE_KEY);
-  if (!saved) return [...seedStores];
+  if (!saved) return [];
   try {
     const parsed = JSON.parse(saved);
-    if (!Array.isArray(parsed)) return [...seedStores];
+    if (!Array.isArray(parsed)) return [];
     return parsed.map((store) => ({
       ...store,
       shootingStatus: store.shootingStatus || "未設定",
@@ -158,7 +146,7 @@ function loadStores() {
       memo: store.memo || "",
     }));
   } catch {
-    return [...seedStores];
+    return [];
   }
 }
 
@@ -201,7 +189,7 @@ function renderSummary() {
 function renderAreaList(items) {
   areaList.innerHTML = "";
   if (items.length === 0) {
-    areaList.innerHTML = `<p class="empty">該当する店舗がありません。</p>`;
+    areaList.innerHTML = `<p class="empty">案件はまだありません。上のフォームから店舗を選んで追加してください。</p>`;
     return;
   }
 
@@ -333,7 +321,7 @@ function normalizeCaseType(type) {
 function renderGantt(items) {
   ganttChart.innerHTML = "";
   if (items.length === 0) {
-    ganttChart.innerHTML = `<p class="empty">表示できるガントチャートがありません。</p>`;
+    ganttChart.innerHTML = `<p class="empty">ガントに表示する案件はまだありません。</p>`;
     return;
   }
 
@@ -442,10 +430,6 @@ async function loadFromSheet() {
     const response = await apiGet("read");
     if (!response.ok) throw new Error(response.error || "読み込みに失敗しました");
     const sheetStores = fromSheetRows(response.stores || [], response.sales || []);
-    if (sheetStores.length === 0) {
-      setSyncStatus("スプシは空です。先に「現在の店舗をスプシへ初期反映」を押してください。");
-      return;
-    }
     stores = sheetStores;
     saveStores();
     render();
@@ -456,15 +440,19 @@ async function loadFromSheet() {
 }
 
 function seedSheetFromCurrentStores() {
-  if (!confirm("現在表示している店舗データをスプレッドシートへ反映しますか？")) return;
-  setSyncStatus("スプシへ初期反映中... 数十秒かかる場合があります。");
+  if (!confirm("現在表示している案件データをスプレッドシートへ反映しますか？")) return;
+  setSyncStatus("スプシへ反映中... 数十秒かかる場合があります。");
   const items = stores.map((store) => ({ store: toSheetStore(store), sales: toSheetSales(store) }));
   const chunks = [];
   for (let i = 0; i < items.length; i += 30) chunks.push(items.slice(i, i + 30));
+  if (chunks.length === 0) {
+    setSyncStatus("反映する案件がありません。");
+    return;
+  }
   chunks.forEach((chunk, index) => {
     setTimeout(() => {
       apiPost("bulkUpsert", { stores: chunk });
-      if (index === chunks.length - 1) setSyncStatus(`初期反映を送信しました。少し待ってからスプシを確認してください。送信件数: ${items.length}件`);
+      if (index === chunks.length - 1) setSyncStatus(`反映を送信しました。送信件数: ${items.length}件`);
     }, index * 1200);
   });
 }
@@ -478,6 +466,11 @@ function syncStoreToSheet(store) {
 function deleteStoreFromSheet(id) {
   apiPost("deleteStore", { storeId: id });
   setSyncStatus("削除をスプシへ送信しました");
+}
+
+function clearSheetCases() {
+  apiPost("clearAllCases", {});
+  setSyncStatus("全案件削除をスプシへ送信しました");
 }
 
 function escapeId(value) {
