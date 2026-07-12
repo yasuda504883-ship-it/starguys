@@ -1,5 +1,5 @@
-const TASK_STORAGE_KEY = "starguys-personal-tasks-v3";
-const OLD_TASK_STORAGE_KEYS = ["starguys-personal-tasks-v2", "starguys-personal-tasks-v1"];
+const TASK_STORAGE_KEY = "starguys-personal-tasks-v4";
+const OLD_TASK_STORAGE_KEYS = ["starguys-personal-tasks-v3", "starguys-personal-tasks-v2", "starguys-personal-tasks-v1"];
 const taskAssignees = typeof assignees !== "undefined" ? assignees : ["濱治", "羽賀", "佐藤", "鈴木", "安田"];
 const taskStatuses = ["未着手", "進行中", "完了"];
 const taskStoreMaster = Object.entries(window.STORE_GROUPS || {}).flatMap(([area, names]) =>
@@ -34,7 +34,9 @@ taskForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const title = document.getElementById("taskTitle").value.trim();
   if (!title) return;
-  const selectedStore = findTaskStoreById(document.getElementById("taskStore").value);
+
+  const storeInput = document.getElementById("taskStore").value.trim();
+  const selectedStore = findTaskStoreByInput(storeInput);
   const task = {
     id: `task-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     title,
@@ -42,18 +44,20 @@ taskForm.addEventListener("submit", (event) => {
     dueDate: document.getElementById("taskDueDate").value,
     priority: document.getElementById("taskPriority").value,
     storeId: selectedStore?.id || "",
-    store: selectedStore?.name || "",
+    store: selectedStore?.name || storeInput,
     storeArea: selectedStore?.area || "",
     memo: document.getElementById("taskMemo").value.trim(),
     status: "未着手",
     completedAt: "",
     createdAt: new Date().toISOString(),
   };
+
   tasks.unshift(task);
   saveTasks();
   syncTaskToSheet(task);
   taskForm.reset();
   document.getElementById("taskPriority").value = "中";
+  refreshTaskStoreSuggestions();
   renderTasks();
 });
 
@@ -66,6 +70,7 @@ clearCompletedTasks.addEventListener("click", () => {
   completed.forEach((task) => deleteTaskFromSheet(task.id));
   tasks = tasks.filter((task) => task.status !== "完了");
   saveTasks();
+  refreshTaskStoreSuggestions();
   renderTasks();
 });
 
@@ -75,6 +80,7 @@ function initTaskTab() {
       const isTasks = button.dataset.view === "tasks";
       tasksView.classList.toggle("active", isTasks);
       if (isTasks) {
+        refreshTaskStoreSuggestions();
         renderTasks();
         if (!taskCloudLoaded) loadTasksFromSheet(false);
       }
@@ -85,19 +91,62 @@ function initTaskTab() {
 function initTaskInputs() {
   document.getElementById("taskAssignee").innerHTML = taskAssignees.map((name) => `<option>${escapeTaskHtml(name)}</option>`).join("");
   taskFilterAssignee.innerHTML = `<option value="all">全員</option>${taskAssignees.map((name) => `<option>${escapeTaskHtml(name)}</option>`).join("")}`;
+
   const taskStore = document.getElementById("taskStore");
-  taskStore.innerHTML = `<option value="">店舗に紐づけない</option>${Object.keys(window.STORE_GROUPS || {}).map((area) => {
-    const options = taskStoreMaster.filter((store) => store.area === area).map((store) => `<option value="${escapeTaskHtml(store.id)}">${escapeTaskHtml(store.name)}</option>`).join("");
-    return `<optgroup label="${escapeTaskHtml(area)}">${options}</optgroup>`;
-  }).join("")}`;
+  taskStore.setAttribute("list", "taskStoreSuggestions");
+  taskStore.setAttribute("autocomplete", "off");
+  taskStore.placeholder = "店名を入力・候補から選択";
+  taskStore.addEventListener("input", autoSetTaskAssignee);
   taskStore.addEventListener("change", autoSetTaskAssignee);
+  refreshTaskStoreSuggestions();
+}
+
+function refreshTaskStoreSuggestions() {
+  const datalist = document.getElementById("taskStoreSuggestions");
+  if (!datalist) return;
+
+  const registered = typeof stores !== "undefined"
+    ? stores.map((store) => ({ id: store.id, name: store.name, area: store.area, source: "案件登録済み" }))
+    : [];
+  const master = taskStoreMaster.map((store) => ({ ...store, source: "掲載店舗" }));
+  const previous = tasks
+    .filter((task) => task.store && !task.storeId)
+    .map((task) => ({ id: "", name: task.store, area: task.storeArea || "", source: "過去入力" }));
+
+  const seen = new Set();
+  const candidates = [...registered, ...master, ...previous].filter((store) => {
+    const key = `${store.area}__${store.name}`.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  datalist.innerHTML = candidates.map((store) => {
+    const label = [store.area, store.source].filter(Boolean).join(" / ");
+    return `<option value="${escapeTaskHtml(store.name)}" label="${escapeTaskHtml(label)}"></option>`;
+  }).join("");
 }
 
 function autoSetTaskAssignee(event) {
-  const selectedStore = findTaskStoreById(event.target.value);
+  const selectedStore = findTaskStoreByInput(event.target.value);
   if (!selectedStore || typeof stores === "undefined") return;
   const registeredCase = stores.find((store) => store.name === selectedStore.name && store.area === selectedStore.area);
   if (registeredCase?.assignee) document.getElementById("taskAssignee").value = registeredCase.assignee;
+}
+
+function findTaskStoreByInput(value) {
+  const input = String(value || "").trim().toLowerCase();
+  if (!input) return null;
+
+  const registeredMatches = typeof stores !== "undefined"
+    ? stores.filter((store) => store.name.trim().toLowerCase() === input)
+    : [];
+  if (registeredMatches.length) {
+    const store = registeredMatches[0];
+    return { id: store.id, name: store.name, area: store.area };
+  }
+
+  return taskStoreMaster.find((store) => store.name.trim().toLowerCase() === input) || null;
 }
 
 function loadTasks() {
@@ -120,15 +169,19 @@ function loadTasks() {
 }
 
 function normalizeTask(task) {
-  const matchedStore = task.storeId ? findTaskStoreById(task.storeId) : taskStoreMaster.find((store) => store.name === task.store) || null;
+  const rawStoreName = task.store || task["店舗名"] || "";
+  const matchedStore = task.storeId
+    ? findTaskStoreById(task.storeId)
+    : taskStoreMaster.find((store) => store.name === rawStoreName) || null;
+
   return {
-    id: String(task.id || `task-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`),
+    id: String(task.id || task["タスクID"] || `task-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`),
     title: String(task.title || task["タスク名"] || ""),
     assignee: task.assignee || task["担当者"] || "安田",
     dueDate: normalizeSheetDate(task.dueDate || task["期限"] || ""),
     priority: ["高", "中", "低"].includes(task.priority || task["優先度"]) ? (task.priority || task["優先度"]) : "中",
     storeId: matchedStore?.id || task.storeId || task["店舗ID"] || "",
-    store: matchedStore?.name || task.store || task["店舗名"] || "",
+    store: matchedStore?.name || rawStoreName,
     storeArea: matchedStore?.area || task.storeArea || task["エリア"] || "",
     memo: task.memo || task["メモ"] || "",
     status: taskStatuses.includes(task.status || task["ステータス"]) ? (task.status || task["ステータス"]) : "未着手",
@@ -147,6 +200,7 @@ function renderTasks() {
     taskList.innerHTML = `<p class="empty">表示するタスクはありません。</p>`;
     return;
   }
+
   taskList.innerHTML = filtered.map(taskCard).join("");
   taskList.querySelectorAll("input[data-task-action='complete']").forEach((input) => input.addEventListener("change", () => updateTask(input.dataset.id, "status", input.checked ? "完了" : "未着手")));
   taskList.querySelectorAll("select[data-task-action]").forEach((select) => select.addEventListener("change", () => updateTask(select.dataset.id, select.dataset.taskAction, select.value)));
@@ -196,9 +250,16 @@ function taskCard(task) {
   const today = dateString(new Date());
   const overdue = task.status !== "完了" && task.dueDate && task.dueDate < today;
   const completed = task.status === "完了";
+  const linkedStore = task.store && task.storeId;
+  const storeDisplay = task.store
+    ? linkedStore
+      ? `<button class="linked-store" type="button" data-task-action="openStore" data-store-name="${escapeTaskHtml(task.store)}" data-store-area="${escapeTaskHtml(task.storeArea)}">${escapeTaskHtml(task.storeArea)} / ${escapeTaskHtml(task.store)}</button>`
+      : `<span class="free-store">${escapeTaskHtml(task.store)}（手入力）</span>`
+    : "";
+
   return `<article class="task-card ${completed ? "is-complete" : ""} ${overdue ? "is-overdue" : ""}">
     <label class="task-check"><input type="checkbox" data-task-action="complete" data-id="${escapeTaskHtml(task.id)}" ${completed ? "checked" : ""} /></label>
-    <div class="task-main"><strong>${escapeTaskHtml(task.title)}</strong><div class="task-meta"><span>${escapeTaskHtml(task.assignee)}</span><span class="priority priority-${escapeTaskHtml(task.priority)}">優先度 ${escapeTaskHtml(task.priority)}</span><span class="${overdue ? "overdue-text" : ""}">${escapeTaskHtml(task.dueDate ? formatTaskDate(task.dueDate) : "期限なし")}</span>${task.store ? `<button class="linked-store" type="button" data-task-action="openStore" data-store-name="${escapeTaskHtml(task.store)}" data-store-area="${escapeTaskHtml(task.storeArea)}">${escapeTaskHtml(task.storeArea)} / ${escapeTaskHtml(task.store)}</button>` : ""}</div>${task.memo ? `<p>${escapeTaskHtml(task.memo)}</p>` : ""}</div>
+    <div class="task-main"><strong>${escapeTaskHtml(task.title)}</strong><div class="task-meta"><span>${escapeTaskHtml(task.assignee)}</span><span class="priority priority-${escapeTaskHtml(task.priority)}">優先度 ${escapeTaskHtml(task.priority)}</span><span class="${overdue ? "overdue-text" : ""}">${escapeTaskHtml(task.dueDate ? formatTaskDate(task.dueDate) : "期限なし")}</span>${storeDisplay}</div>${task.memo ? `<p>${escapeTaskHtml(task.memo)}</p>` : ""}</div>
     <select data-task-action="status" data-id="${escapeTaskHtml(task.id)}">${taskStatuses.map((status) => `<option ${task.status === status ? "selected" : ""}>${status}</option>`).join("")}</select>
     <input type="date" value="${escapeTaskHtml(task.dueDate || "")}" data-task-action="dueDate" data-id="${escapeTaskHtml(task.id)}" />
     <select data-task-action="priority" data-id="${escapeTaskHtml(task.id)}">${["高", "中", "低"].map((priority) => `<option ${task.priority === priority ? "selected" : ""}>${priority}</option>`).join("")}</select>
@@ -222,6 +283,7 @@ function deleteTask(id) {
   tasks = tasks.filter((item) => item.id !== id);
   saveTasks();
   deleteTaskFromSheet(id);
+  refreshTaskStoreSuggestions();
   renderTasks();
 }
 
@@ -237,6 +299,7 @@ async function loadTasksFromSheet(showMessage = true) {
     tasks = (response.tasks || []).map(normalizeTask).filter((task) => task.id && task.title);
     taskCloudLoaded = true;
     saveTasks();
+    refreshTaskStoreSuggestions();
     renderTasks();
     setTaskSyncStatus(`同期済み：${tasks.length}件`);
   } catch (error) {
