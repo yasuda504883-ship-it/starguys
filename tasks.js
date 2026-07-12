@@ -1,6 +1,14 @@
-const TASK_STORAGE_KEY = "starguys-personal-tasks-v1";
+const TASK_STORAGE_KEY = "starguys-personal-tasks-v2";
+const OLD_TASK_STORAGE_KEY = "starguys-personal-tasks-v1";
 const taskAssignees = typeof assignees !== "undefined" ? assignees : ["濱治", "羽賀", "佐藤", "鈴木", "安田"];
 const taskStatuses = ["未着手", "進行中", "完了"];
+const taskStoreMaster = Object.entries(window.STORE_GROUPS || {}).flatMap(([area, names]) =>
+  String(names).split("\n").map((name) => name.trim()).filter(Boolean).map((name) => ({
+    id: makeTaskStoreId(area, name),
+    name,
+    area,
+  }))
+);
 
 let tasks = loadTasks();
 
@@ -24,13 +32,16 @@ taskForm.addEventListener("submit", (event) => {
   const title = document.getElementById("taskTitle").value.trim();
   if (!title) return;
 
+  const selectedStore = findTaskStoreById(document.getElementById("taskStore").value);
   tasks.unshift({
     id: `task-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     title,
     assignee: document.getElementById("taskAssignee").value,
     dueDate: document.getElementById("taskDueDate").value,
     priority: document.getElementById("taskPriority").value,
-    store: document.getElementById("taskStore").value.trim(),
+    storeId: selectedStore?.id || "",
+    store: selectedStore?.name || "",
+    storeArea: selectedStore?.area || "",
     memo: document.getElementById("taskMemo").value.trim(),
     status: "未着手",
     completedAt: "",
@@ -72,28 +83,51 @@ function initTaskInputs() {
   taskAssignee.innerHTML = taskAssignees.map((name) => `<option>${escapeTaskHtml(name)}</option>`).join("");
   taskFilterAssignee.innerHTML = `<option value="all">全員</option>${taskAssignees.map((name) => `<option>${escapeTaskHtml(name)}</option>`).join("")}`;
 
-  const groups = window.STORE_GROUPS || {};
-  const names = Object.values(groups)
-    .flatMap((value) => String(value).split("\n"))
-    .map((name) => name.trim())
-    .filter(Boolean);
-  document.getElementById("taskStoreSuggestions").innerHTML = names
-    .map((name) => `<option value="${escapeTaskHtml(name)}"></option>`)
-    .join("");
+  const oldStoreInput = document.getElementById("taskStore");
+  oldStoreInput.outerHTML = `
+    <select id="taskStore">
+      <option value="">店舗に紐づけない</option>
+      ${Object.keys(window.STORE_GROUPS || {}).map((area) => {
+        const options = taskStoreMaster
+          .filter((store) => store.area === area)
+          .map((store) => `<option value="${escapeTaskHtml(store.id)}">${escapeTaskHtml(store.name)}</option>`)
+          .join("");
+        return `<optgroup label="${escapeTaskHtml(area)}">${options}</optgroup>`;
+      }).join("")}
+    </select>`;
+
+  document.getElementById("taskStore").addEventListener("change", autoSetTaskAssignee);
+}
+
+function autoSetTaskAssignee(event) {
+  const selectedStore = findTaskStoreById(event.target.value);
+  if (!selectedStore || typeof stores === "undefined") return;
+  const registeredCase = stores.find((store) => store.name === selectedStore.name && store.area === selectedStore.area);
+  if (registeredCase?.assignee) document.getElementById("taskAssignee").value = registeredCase.assignee;
 }
 
 function loadTasks() {
   try {
-    const saved = JSON.parse(localStorage.getItem(TASK_STORAGE_KEY) || "[]");
+    const raw = localStorage.getItem(TASK_STORAGE_KEY) || localStorage.getItem(OLD_TASK_STORAGE_KEY) || "[]";
+    const saved = JSON.parse(raw);
     if (!Array.isArray(saved)) return [];
-    return saved.map((task) => ({
-      ...task,
-      status: taskStatuses.includes(task.status) ? task.status : "未着手",
-      priority: ["高", "中", "低"].includes(task.priority) ? task.priority : "中",
-      memo: task.memo || "",
-      store: task.store || "",
-      completedAt: task.completedAt || "",
-    }));
+    const normalized = saved.map((task) => {
+      const matchedStore = task.storeId
+        ? findTaskStoreById(task.storeId)
+        : taskStoreMaster.find((store) => store.name === task.store) || null;
+      return {
+        ...task,
+        status: taskStatuses.includes(task.status) ? task.status : "未着手",
+        priority: ["高", "中", "低"].includes(task.priority) ? task.priority : "中",
+        memo: task.memo || "",
+        storeId: matchedStore?.id || "",
+        store: matchedStore?.name || "",
+        storeArea: matchedStore?.area || "",
+        completedAt: task.completedAt || "",
+      };
+    });
+    localStorage.setItem(TASK_STORAGE_KEY, JSON.stringify(normalized));
+    return normalized;
   } catch {
     return [];
   }
@@ -130,6 +164,10 @@ function renderTasks() {
   taskList.querySelectorAll("button[data-task-action='delete']").forEach((button) => {
     button.addEventListener("click", () => deleteTask(button.dataset.id));
   });
+
+  taskList.querySelectorAll("button[data-task-action='openStore']").forEach((button) => {
+    button.addEventListener("click", () => openLinkedStore(button.dataset.storeName, button.dataset.storeArea));
+  });
 }
 
 function renderTaskSummary() {
@@ -157,7 +195,7 @@ function getFilteredTasks() {
 
   return [...tasks]
     .filter((task) => {
-      const textMatch = !keyword || [task.title, task.store, task.memo].some((value) => String(value || "").toLowerCase().includes(keyword));
+      const textMatch = !keyword || [task.title, task.store, task.storeArea, task.memo].some((value) => String(value || "").toLowerCase().includes(keyword));
       const assigneeMatch = taskFilterAssignee.value === "all" || task.assignee === taskFilterAssignee.value;
       const statusMatch = taskStatusFilter.value === "all" || task.status === taskStatusFilter.value;
       let dateMatch = true;
@@ -196,7 +234,7 @@ function taskCard(task) {
           <span>${escapeTaskHtml(task.assignee)}</span>
           <span class="priority priority-${escapeTaskHtml(task.priority)}">優先度 ${escapeTaskHtml(task.priority)}</span>
           <span class="${overdue ? "overdue-text" : ""}">${escapeTaskHtml(dueLabel)}</span>
-          ${task.store ? `<span>店舗：${escapeTaskHtml(task.store)}</span>` : ""}
+          ${task.store ? `<button class="linked-store" type="button" data-task-action="openStore" data-store-name="${escapeTaskHtml(task.store)}" data-store-area="${escapeTaskHtml(task.storeArea)}">${escapeTaskHtml(task.storeArea)} / ${escapeTaskHtml(task.store)}</button>` : ""}
         </div>
         ${task.memo ? `<p>${escapeTaskHtml(task.memo)}</p>` : ""}
       </div>
@@ -212,13 +250,20 @@ function taskCard(task) {
   `;
 }
 
+function openLinkedStore(storeName, storeArea) {
+  const storeTab = document.querySelector('.tab-button[data-view="stores"]');
+  storeTab?.click();
+  if (typeof searchText !== "undefined") searchText.value = storeName;
+  if (typeof filterArea !== "undefined" && Array.from(filterArea.options).some((option) => option.value === storeArea)) filterArea.value = storeArea;
+  if (typeof render === "function") render();
+  document.getElementById("areaList")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 function updateTask(id, key, value) {
   const task = tasks.find((item) => item.id === id);
   if (!task) return;
   task[key] = value;
-  if (key === "status") {
-    task.completedAt = value === "完了" ? new Date().toISOString() : "";
-  }
+  if (key === "status") task.completedAt = value === "完了" ? new Date().toISOString() : "";
   saveTasks();
   renderTasks();
 }
@@ -236,8 +281,16 @@ function deleteTask(id) {
   renderTasks();
 }
 
+function findTaskStoreById(id) {
+  return taskStoreMaster.find((store) => store.id === id) || null;
+}
+
+function makeTaskStoreId(area, name) {
+  return `${area}__${name}`.replace(/\s+/g, "_");
+}
+
 function formatTaskDate(value) {
-  const [year, month, day] = value.split("-");
+  const [, month, day] = value.split("-");
   return `${Number(month)}/${Number(day)}`;
 }
 
