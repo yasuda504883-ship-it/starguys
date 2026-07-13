@@ -1,4 +1,6 @@
 const SPREADSHEET_ID = '1sMh7LURDYJMbWArTMrC3XQuC2D2sYatql-IXY8wztXI';
+const CALENDAR_ID = 'primary';
+const TASK_EVENT_PROPERTY_PREFIX = 'TASK_CALENDAR_EVENT_';
 
 const SHEETS = {
   stores: '店舗マスター',
@@ -161,6 +163,7 @@ function upsertTask(task) {
   });
   if (row > 0) sheet.getRange(row, 1, 1, values.length).setValues([values]);
   else sheet.appendRow(values);
+  syncTaskCalendar(task);
   addLog('upsertTask', id, task['タスク名'] || '');
   return { ok: true, task };
 }
@@ -174,11 +177,77 @@ function bulkUpsertTasks(tasks) {
 
 function deleteTask(taskId) {
   if (!taskId) throw new Error('taskId is required');
+  deleteTaskCalendar(String(taskId));
   const sheet = getSpreadsheet().getSheetByName(SHEETS.tasks);
   const row = findRowById(sheet, String(taskId));
   if (row > 0) sheet.deleteRow(row);
   addLog('deleteTask', taskId, '');
   return { ok: true, taskId };
+}
+
+function syncTaskCalendar(task) {
+  const taskId = String(task['タスクID'] || '');
+  if (!taskId) return;
+  const dueDate = parseDateOnly(task['期限']);
+  const status = String(task['ステータス'] || '');
+  if (!dueDate || status === '完了') {
+    deleteTaskCalendar(taskId);
+    return;
+  }
+
+  const calendar = getTargetCalendar();
+  const properties = PropertiesService.getScriptProperties();
+  const propertyKey = TASK_EVENT_PROPERTY_PREFIX + taskId;
+  const savedEventId = properties.getProperty(propertyKey);
+  let event = savedEventId ? calendar.getEventById(savedEventId) : null;
+  const title = '【タスク】' + String(task['タスク名'] || '名称未設定');
+  const description = [
+    '担当者：' + String(task['担当者'] || ''),
+    task['店舗名'] ? '関連店舗：' + String(task['店舗名']) : '',
+    task['エリア'] ? 'エリア：' + String(task['エリア']) : '',
+    task['優先度'] ? '優先度：' + String(task['優先度']) : '',
+    task['メモ'] ? 'メモ：' + String(task['メモ']) : '',
+    'STAR GUYS管理システムから同期',
+  ].filter(Boolean).join('\n');
+
+  if (event) {
+    event.setTitle(title);
+    event.setDescription(description);
+    event.setAllDayDate(dueDate);
+  } else {
+    event = calendar.createAllDayEvent(title, dueDate, { description: description });
+    properties.setProperty(propertyKey, event.getId());
+  }
+}
+
+function deleteTaskCalendar(taskId) {
+  const properties = PropertiesService.getScriptProperties();
+  const propertyKey = TASK_EVENT_PROPERTY_PREFIX + String(taskId);
+  const eventId = properties.getProperty(propertyKey);
+  if (!eventId) return;
+  try {
+    const event = getTargetCalendar().getEventById(eventId);
+    if (event) event.deleteEvent();
+  } catch (error) {}
+  properties.deleteProperty(propertyKey);
+}
+
+function getTargetCalendar() {
+  if (!CALENDAR_ID || CALENDAR_ID === 'primary') return CalendarApp.getDefaultCalendar();
+  const calendar = CalendarApp.getCalendarById(CALENDAR_ID);
+  if (!calendar) throw new Error('指定したGoogleカレンダーが見つかりません');
+  return calendar;
+}
+
+function parseDateOnly(value) {
+  if (!value) return null;
+  if (Object.prototype.toString.call(value) === '[object Date]' && !isNaN(value)) {
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  }
+  const text = String(value).slice(0, 10);
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
 }
 
 function deleteStore(storeId) {
