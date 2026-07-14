@@ -23,6 +23,26 @@ window.STAR_GUYS_AREA_URLS = {
 };
 
 window.STAR_GUYS_STORE_URLS = {
+  "大阪 ミナミ__A-TOP -MONSTAR-": "https://www.star-guys.jp/kansai/osakaminami/a_top/",
+  "大阪 ミナミ__Ai": "https://www.star-guys.jp/kansai/osakaminami/ai/",
+  "大阪 ミナミ__IR": "https://www.star-guys.jp/kansai/osakaminami/ir/",
+  "大阪 ミナミ__Ai$": "https://www.star-guys.jp/kansai/osakaminami/aidoru/",
+  "大阪 ミナミ__ACQUA-OSAKA HONTEN-": "https://www.star-guys.jp/kansai/osakaminami/acqua_osaka_honten/",
+  "大阪 ミナミ__ACQUA -本店-": "https://www.star-guys.jp/kansai/osakaminami/acqua/",
+  "大阪 ミナミ__ASK": "https://www.star-guys.jp/kansai/osakaminami/ask/",
+  "大阪 ミナミ__ADAM": "https://www.star-guys.jp/kansai/osakaminami/adam/",
+  "大阪 ミナミ__ADAM RISE": "https://www.star-guys.jp/kansai/osakaminami/adam_rise/",
+  "大阪 ミナミ__ADAM REX": "https://www.star-guys.jp/kansai/osakaminami/adam_rex/",
+  "大阪 ミナミ__Addiction": "https://www.star-guys.jp/kansai/osakaminami/addiction/",
+  "大阪 ミナミ__ATOM": "https://www.star-guys.jp/kansai/osakaminami/atom/",
+  "大阪 ミナミ__ATOM-ALLES-": "https://www.star-guys.jp/kansai/osakaminami/atom_alles/",
+  "大阪 ミナミ__ATOM-VENUS-": "https://www.star-guys.jp/kansai/osakaminami/atom_venus/",
+  "大阪 ミナミ__ATOM-Travis-": "https://www.star-guys.jp/kansai/osakaminami/travis/",
+  "大阪 ミナミ__ATOM-PLACE-": "https://www.star-guys.jp/kansai/osakaminami/atom_place/",
+  "大阪 ミナミ__ATOM-ROYAL-": "https://www.star-guys.jp/kansai/osakaminami/atom_royal/",
+  "大阪 ミナミ__ATOM-CASTLE-": "https://www.star-guys.jp/kansai/osakaminami/atom_castle/",
+  "大阪 ミナミ__AVALANCHE": "https://www.star-guys.jp/kansai/osakaminami/avalanche/",
+  "大阪 ミナミ__AMATERAS": "https://www.star-guys.jp/kansai/osakaminami/amateras/",
   "大阪 ミナミ__ETERNAL": "https://www.star-guys.jp/kansai/osakaminami/eternal/",
   "大阪 ミナミ__EDENOsaka": "https://www.star-guys.jp/kansai/osakaminami/edenosaka/",
   "広島／流川・福山__Avid": "https://www.star-guys.jp/chugoku_shikoku/hiroshima/avid/"
